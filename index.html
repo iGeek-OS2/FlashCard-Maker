@@ -603,10 +603,31 @@
                 }
 
                 const data = await response.json();
-                const content = JSON.parse(data.choices[0].message.content);
+                
+                // ===== ERROR FIX START =====
+                // AIの応答からJSON部分だけを安全に抽出する
+                const rawContent = data.choices[0].message.content;
+                let jsonContent;
 
-                if (content.flashcards && Array.isArray(content.flashcards)) {
-                    flashCards = content.flashcards.sort(() => 0.5 - Math.random());
+                try {
+                    const jsonStartIndex = rawContent.indexOf('{');
+                    const jsonEndIndex = rawContent.lastIndexOf('}');
+
+                    if (jsonStartIndex === -1 || jsonEndIndex === -1) {
+                        throw new Error("AIの応答から有効なJSONオブジェクトが見つかりませんでした。");
+                    }
+
+                    const jsonString = rawContent.substring(jsonStartIndex, jsonEndIndex + 1);
+                    jsonContent = JSON.parse(jsonString);
+
+                } catch (e) {
+                    console.error("Failed to parse JSON from AI response:", rawContent);
+                    throw new Error("AIの応答の解析に失敗しました。予期しないフォーマットです。");
+                }
+                // ===== ERROR FIX END =====
+
+                if (jsonContent.flashcards && Array.isArray(jsonContent.flashcards)) {
+                    flashCards = jsonContent.flashcards.sort(() => 0.5 - Math.random());
                     currentCardIndex = 0;
                     correctAnswers = 0;
                     setState(AppState.FLASHCARDS);
