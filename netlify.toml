@@ -1,0 +1,10 @@
+# Netlifyがビルドとデプロイを行うための設定ファイル
+
+[build]
+  # ビルドコマンドは不要（静的サイトなので）
+  command = ""
+  # 公開するフォルダ（ルートフォルダ）
+  publish = "/"
+  # サーバーレス関数の場所
+  functions = "netlify/functions/"
+
