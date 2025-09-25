@@ -4,600 +4,346 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlashMaker Web</title>
-    <!-- Tailwind CSS for styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome for icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <!-- pdf.js for PDF processing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
-    <!-- Link to external stylesheet -->
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
 </head>
-<body class="bg-gray-900 text-white">
+<body>
+    <div id="app"></div>
+    <div id="toast-container"></div>
 
-    <div id="app" class="min-h-screen"></div>
+    <script>
+        // 安全な設計のため、このファイルにはAPIキーやトークンは一切含みません。
 
-    <!-- Hidden file inputs for PDF and JSON -->
-    <input type="file" id="pdf-picker" class="hidden" accept=".pdf" multiple>
-    <input type="file" id="json-picker" class="hidden" accept=".json">
-
-    <script type="module">
-        // Set the workerSrc for pdf.js
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
-        
-        // --- CONFIGURATION ---
-        // TODO: Replace with your actual OpenRouter API key
-        const openRouterApiKey = "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"; 
-        const siteUrl = window.location.href; // Or your specific site URL
-        const siteName = "FlashMaker Web";
-
-        // --- STATE MANAGEMENT ---
         const AppState = {
             INITIAL: 'initial',
             FLASHCARDS: 'flashcards',
             FINISHED: 'finished',
-            ERROR: 'error',
-            HELP: 'help'
+            ERROR: 'error'
         };
 
         let appState = AppState.INITIAL;
+        let errorMessage = '';
         let flashCards = [];
+        let currentCardIndex = 0;
+        let isFlipped = false;
         let correctAnswers = 0;
         let selectedCardCount = 20;
-        let loadedPDFText = '';
         let isGenerating = false;
-        let currentCardIndex = 0;
+        let isPDFLoaded = false;
+        let loadedPDFText = '';
         
-        const appContainer = document.getElementById('app');
-
-        // --- RENDER FUNCTIONS ---
-        
-        /**
-         * Main render function that routes to the correct view based on the current app state.
-         */
-        function render() {
-            appContainer.innerHTML = ''; // Clear previous content
-            const mainContent = document.createElement('div');
-            mainContent.className = 'relative min-h-screen overflow-hidden';
-
-            // Common background for all views
-            mainContent.innerHTML = `
-                <div class="absolute inset-0 bg-gradient-to-br from-purple-900/80 via-blue-900/80 to-indigo-900/90 -z-10"></div>
-                <div class="absolute inset-0 bg-black/30 -z-10"></div>
-                <div class="absolute top-1/2 left-1/2 w-96 h-96 bg-cyan-400/20 rounded-full filter blur-3xl opacity-30 -translate-x-1/2 -translate-y-1/2 animate-pulse"></div>
-                <div class="absolute top-1/4 left-1/4 w-72 h-72 bg-purple-400/20 rounded-full filter blur-3xl opacity-20 animate-pulse-slow"></div>
-            `;
-            
-            const viewContainer = document.createElement('div');
-            viewContainer.id = 'view-container';
-            viewContainer.className = 'min-h-screen flex flex-col p-4 sm:p-6 md:p-8';
-
-
-            switch (appState) {
-                case AppState.INITIAL:
-                    viewContainer.innerHTML = getInitialViewHTML();
-                    break;
-                case AppState.FLASHCARDS:
-                    viewContainer.innerHTML = getFlashcardsViewHTML();
-                    break;
-                case AppState.FINISHED:
-                    viewContainer.innerHTML = getFinishedViewHTML();
-                    break;
-                case AppState.ERROR:
-                    viewContainer.innerHTML = getErrorViewHTML(window.lastErrorMessage || "不明なエラーが発生しました。");
-                    break;
-                case AppState.HELP:
-                     viewContainer.innerHTML = getHelpViewHTML();
-                    break;
-            }
-
-            mainContent.appendChild(viewContainer);
-            appContainer.appendChild(mainContent);
-            attachEventListeners();
-        }
-
-        /**
-         * Generates HTML for the initial view.
-         */
-        function getInitialViewHTML() {
-             const isPDFLoaded = loadedPDFText.length > 0;
-             return `
-                <div class="m-auto flex flex-col items-center justify-center w-full max-w-md">
-                    <div class="w-full space-y-7">
-                        <div class="text-center space-y-4">
-                             <div class="inline-flex items-center gap-3">
-                                <i class="fa-solid fa-sparkles text-5xl text-cyan-300" style="text-shadow: 0 0 15px rgba(0, 255, 255, 0.5);"></i>
-                                <h1 class="text-4xl font-extrabold tracking-tight text-white">FlashMaker</h1>
-                             </div>
-                             <p class="text-sm font-semibold text-white/80 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full inline-block border border-white/20">⚠️ このアプリは一般公開されてません</p>
-                        </div>
-
-                        <div class="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl p-6 space-y-4 shadow-2xl shadow-black/30">
-                            <button id="pick-pdf" class="w-full flex items-center justify-center gap-3 text-lg font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 rounded-2xl py-4 transition-transform transform hover:scale-105 shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed">
-                                <i class="fa-solid fa-file-pdf"></i>
-                                PDFを読み込み
-                            </button>
-
-                            <div class="bg-white/10 border border-white/10 rounded-2xl p-4 flex items-center gap-4">
-                                <i class="fa-solid fa-layer-group text-2xl text-white/90"></i>
-                                <div class="flex-grow">
-                                    <p class="text-xs font-semibold text-white/70">カード枚数</p>
-                                    <p class="text-lg font-bold text-white">${selectedCardCount}枚作成する</p>
-                                </div>
-                                <div class="relative">
-                                    <select id="card-count-select" class="appearance-none bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 pl-4 pr-10 rounded-full cursor-pointer transition">
-                                        <option value="10">10枚</option>
-                                        <option value="20">20枚</option>
-                                        <option value="30">30枚</option>
-                                        <option value="40">40枚</option>
-                                    </select>
-                                     <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-white/80 pointer-events-none"></i>
-                                </div>
-                            </div>
-                            
-                            <button id="generate-cards" class="w-full flex items-center justify-center gap-3 text-lg font-bold text-white bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-400 hover:to-teal-500 rounded-2xl py-4 transition-transform transform hover:scale-105 shadow-lg shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed" ${!isPDFLoaded || isGenerating ? 'disabled' : ''}>
-                                ${isGenerating ? `
-                                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>作成中...` 
-                                : `
-                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                    暗記カードを作成`
-                                }
-                            </button>
-                        </div>
-                        
-                        <div class="text-center">
-                            <button id="pick-json" class="text-sm font-semibold text-white/80 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full inline-flex items-center gap-2 border border-white/20 hover:bg-white/20 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                                <i class="fa-solid fa-file-import"></i>
-                                カードデータをインポート
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                ${getTabsHTML(AppState.INITIAL)}
-            `;
-        }
-        
-        /**
-         * Generates HTML for the help view.
-         */
-        function getHelpViewHTML() {
-            const steps = [
-                { title: "1. PDFの選択", text: "画面中央の『PDFを読み込み』ボタンをタップして、フラッシュカードにしたいPDFファイルを選んでください。" },
-                { title: "2. カード枚数の設定", text: "作成したいフラッシュカードの枚数（10, 20, 30, 40枚）を選択できます。" },
-                { title: "3. カードの作成", text: "『暗記カードを作成』ボタンを押すと、AIがPDFの内容からカードを生成します。" },
-                { title: "4. 学習", text: "カードをタップすると答えが見られます。正解・不正解ボタンで自分の理解度を記録しましょう。" }
-            ];
-
-            return `
-                 <div class="m-auto flex flex-col justify-start w-full max-w-2xl h-full pt-8">
-                     <div class="text-left mb-8">
-                        <h1 class="text-4xl font-extrabold text-white flex items-center gap-3"><i class="fa-solid fa-lightbulb"></i>使い方</h1>
-                     </div>
-                     <div class="space-y-6 overflow-y-auto pr-2 flex-grow">
-                         <div class="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
-                            <p>FlashMakerへようこそ！このアプリは、PDFからAIを使って簡単にフラッシュカードを作成し、学習するのを助けます。</p>
-                         </div>
-                         <div class="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl p-6 space-y-6">
-                            ${steps.map(step => `
-                                <div>
-                                    <h2 class="text-lg font-bold text-cyan-300">${step.title}</h2>
-                                    <p class="text-white/80">${step.text}</p>
-                                </div>
-                            `).join('')}
-                         </div>
-                     </div>
-                 </div>
-                 ${getTabsHTML(AppState.HELP)}
-            `;
-        }
-
-
-        /**
-         * Generates HTML for the tab navigation bar.
-         */
-        function getTabsHTML(activeState) {
-            const tabs = [
-                { state: AppState.INITIAL, icon: 'fa-house', label: 'ホーム' },
-                { state: AppState.HELP, icon: 'fa-lightbulb', label: 'ヒント' }
-            ];
-
-            return `
-                <div class="fixed bottom-0 left-0 right-0 p-4 bg-black/10 backdrop-blur-xl border-t border-white/10">
-                    <div class="flex justify-around max-w-md mx-auto">
-                        ${tabs.map(tab => `
-                            <button class="tab-button flex flex-col items-center gap-1 ${activeState === tab.state ? 'text-cyan-400' : 'text-white/60 hover:text-white'}" data-state="${tab.state}">
-                                <i class="fa-solid ${tab.icon} text-2xl"></i>
-                                <span class="text-xs font-bold">${tab.label}</span>
-                            </button>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        /**
-         * Generates HTML for the flashcards view.
-         */
-        function getFlashcardsViewHTML() {
-            if (currentCardIndex >= flashCards.length) return getFinishedViewHTML();
-            
-            const card = flashCards[currentCardIndex];
-            return `
-                <div class="flex flex-col items-center justify-center flex-grow w-full max-w-md mx-auto space-y-8">
-                    <p class="text-2xl font-bold text-white/90">第${currentCardIndex + 1}問 / ${flashCards.length}問</p>
-                    
-                    <div id="flashcard" class="card w-full h-64 sm:h-80 cursor-pointer">
-                        <div class="card-inner">
-                            <div class="card-front bg-white/90 text-gray-900 p-6 shadow-2xl shadow-black/50">
-                                <p class="text-xl md:text-2xl font-bold text-center">${card.frontText}</p>
-                            </div>
-                            <div class="card-back bg-white/90 text-gray-900 p-6 shadow-2xl shadow-black/50">
-                                <p class="text-xl md:text-2xl font-bold text-center">${card.backText}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex justify-center gap-4 sm:gap-8 w-full">
-                        <button id="wrong-btn" class="w-32 sm:w-40 py-4 text-lg font-bold text-white bg-red-600 hover:bg-red-500 rounded-full transition-transform transform hover:scale-110 shadow-lg shadow-red-500/30">
-                            不正解
-                        </button>
-                        <button id="correct-btn" class="w-32 sm:w-40 py-4 text-lg font-bold text-white bg-green-600 hover:bg-green-500 rounded-full transition-transform transform hover:scale-110 shadow-lg shadow-green-500/30">
-                            正解
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
-
-        /**
-         * Generates HTML for the finished view.
-         */
-        function getFinishedViewHTML() {
-             const total = flashCards.length;
-             const correctPercentage = total > 0 ? (correctAnswers / total) * 100 : 0;
-             const incorrectPercentage = total > 0 ? ((total - correctAnswers) / total) * 100 : 0;
-
-             return `
-                 <div class="m-auto flex flex-col items-center justify-center w-full max-w-md">
-                     <div class="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl p-8 space-y-8 shadow-2xl shadow-black/30 w-full">
-                         <div class="text-center">
-                            <h2 class="text-4xl font-extrabold text-white">結果</h2>
-                            <p class="text-lg text-white/70">今回の成績です</p>
-                         </div>
-                         
-                         <div class="flex justify-around">
-                            ${getResultCircleHTML("正解", correctAnswers, total, correctPercentage, 'conic-gradient(from 180deg at 50% 50%, #4ade80, #16a34a)')}
-                            ${getResultCircleHTML("不正解", total - correctAnswers, total, incorrectPercentage, 'conic-gradient(from 180deg at 50% 50%, #f87171, #dc2626)')}
-                         </div>
-
-                         <div class="space-y-4">
-                            <button id="restart-quiz" class="w-full py-3 text-lg font-bold bg-white/20 hover:bg-white/30 rounded-xl transition">もう一度挑戦</button>
-                            <button id="reset-app" class="w-full py-3 text-lg font-bold bg-white/20 hover:bg-white/30 rounded-xl transition">タイトルに戻る</button>
-                         </div>
-                         
-                         <div class="flex justify-center gap-4 pt-4 border-t border-white/10">
-                            <button id="export-json" class="flex items-center gap-2 text-sm font-semibold text-white/80 bg-white/10 px-4 py-2 rounded-full hover:bg-white/20 transition"><i class="fa-solid fa-file-code"></i>JSONで保存</button>
-                            <button id="export-csv" class="flex items-center gap-2 text-sm font-semibold text-white/80 bg-white/10 px-4 py-2 rounded-full hover:bg-white/20 transition"><i class="fa-solid fa-file-csv"></i>CSVで保存</button>
-                         </div>
-                     </div>
-                 </div>
-             `;
-        }
-        
-        /**
-         * Generates HTML for a result circle graph.
-         */
-        function getResultCircleHTML(title, count, total, percentage, gradient) {
-            return `
-                <div class="flex flex-col items-center gap-2">
-                    <div class="relative w-28 h-28 flex items-center justify-center">
-                        <div class="absolute inset-0 rounded-full" style="background: radial-gradient(circle, transparent 60%, ${gradient}); --p:${percentage}; mask: conic-gradient(from -90deg, #000 var(--p), transparent 0)"></div>
-                        <div class="absolute inset-2 bg-gray-800/50 rounded-full"></div>
-                        <span class="relative text-3xl font-bold">${count}</span>
-                    </div>
-                    <p class="font-bold text-white/80">${title}</p>
-                </div>
-            `;
-        }
-
-        /**
-         * Generates HTML for the error view.
-         */
-        function getErrorViewHTML(message) {
-            return `
-                <div class="m-auto flex flex-col items-center justify-center w-full max-w-md text-center">
-                    <div class="bg-black/20 backdrop-blur-xl border border-red-500/50 rounded-3xl p-8 space-y-4 shadow-2xl shadow-black/30">
-                        <i class="fa-solid fa-triangle-exclamation text-5xl text-red-500"></i>
-                        <h2 class="text-2xl font-bold text-red-400">エラーが発生しました</h2>
-                        <p class="text-white/80">${message}</p>
-                        <button id="reset-app" class="mt-4 w-full py-3 font-bold bg-white/20 hover:bg-white/30 rounded-xl transition">最初に戻る</button>
-                    </div>
-                </div>
-            `;
-        }
-
-
-        // --- EVENT HANDLING ---
-
-        /**
-         * Attaches event listeners to the current view's elements.
-         */
-        function attachEventListeners() {
-            // Use event delegation for tab buttons as they are always present
-            document.querySelectorAll('.tab-button').forEach(button => {
-                button.addEventListener('click', () => {
-                    const targetState = button.dataset.state;
-                    if (targetState === AppState.INITIAL) {
-                        resetApp();
-                    } else {
-                        appState = targetState;
-                        render();
-                    }
-                });
-            });
-
-            if (appState === AppState.INITIAL) {
-                document.getElementById('pick-pdf')?.addEventListener('click', () => document.getElementById('pdf-picker').click());
-                document.getElementById('pdf-picker')?.addEventListener('change', handlePDFPicker);
-                document.getElementById('pick-json')?.addEventListener('click', () => document.getElementById('json-picker').click());
-                document.getElementById('json-picker')?.addEventListener('change', handleJSONPicker);
-                document.getElementById('generate-cards')?.addEventListener('click', generateFlashcards);
-                const countSelect = document.getElementById('card-count-select');
-                if (countSelect) {
-                    countSelect.value = selectedCardCount;
-                    countSelect.addEventListener('change', (e) => selectedCardCount = parseInt(e.target.value));
-                }
-            } else if (appState === AppState.FLASHCARDS) {
-                document.getElementById('flashcard')?.addEventListener('click', (e) => e.currentTarget.classList.toggle('flipped'));
-                document.getElementById('correct-btn')?.addEventListener('click', () => handleAnswer(true));
-                document.getElementById('wrong-btn')?.addEventListener('click', () => handleAnswer(false));
-            } else if (appState === AppState.FINISHED) {
-                document.getElementById('restart-quiz')?.addEventListener('click', restartQuiz);
-                document.getElementById('reset-app')?.addEventListener('click', resetApp);
-                document.getElementById('export-json')?.addEventListener('click', exportFlashcardsAsJSON);
-                document.getElementById('export-csv')?.addEventListener('click', exportToWordHolicCSV);
-            } else if (appState === AppState.ERROR) {
-                document.getElementById('reset-app')?.addEventListener('click', resetApp);
-            }
-        }
-        
-        // --- LOGIC FUNCTIONS ---
-        
-        function handleAnswer(isCorrect) {
-            if(isCorrect) correctAnswers++;
-            currentCardIndex++;
-            if (currentCardIndex >= flashCards.length) {
-                appState = AppState.FINISHED;
-            }
+        function setState(newState, newErrorMessage = '') {
+            appState = newState;
+            errorMessage = newErrorMessage;
             render();
         }
         
-        async function handlePDFPicker(event) {
-            const files = event.target.files;
-            if (!files.length) return;
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => { toast.classList.add('show'); }, 10);
             
-            showToast("PDFを読み込み中...");
-            loadedPDFText = await extractTextFromPDFs(Array.from(files));
-            if(loadedPDFText) {
-                showToast("PDFの読み込みが完了しました。", "success");
-            } else {
-                 showToast("PDFからテキストを抽出できませんでした。", "error");
-            }
-            render();
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => { if (container.contains(toast)) { container.removeChild(toast); } }, 500);
+            }, duration);
         }
 
-        async function extractTextFromPDFs(files) {
-            let fullText = '';
-            for (const file of files) {
-                const arrayBuffer = await file.arrayBuffer();
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file && file.type === "application/pdf") {
+                showToast("PDFを読み込んでいます...", "info", 60000);
                 try {
-                    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    let textContent = '';
                     for (let i = 1; i <= pdf.numPages; i++) {
                         const page = await pdf.getPage(i);
-                        const textContent = await page.getTextContent();
-                        fullText += textContent.items.map(item => item.str).join(' ');
+                        const text = await page.getTextContent();
+                        textContent += text.items.map(s => s.str).join(' ');
                     }
-                } catch (error) {
-                    console.error("Error processing PDF:", error);
-                    setState(AppState.ERROR, `PDFファイルの処理中にエラーが発生しました: ${error.message}`);
-                    return '';
+                    loadedPDFText = textContent;
+                    isPDFLoaded = true;
+                    showToast("PDFの読み込みが完了しました！", "success");
+                } catch (err) {
+                    setState(AppState.ERROR, `PDFの解析に失敗しました: ${err.message}`);
+                } finally {
+                    document.querySelector('.toast')?.remove();
+                    render();
                 }
+            } else {
+                 showToast("PDFファイルを選択してください。", "error");
             }
-            return fullText;
         }
-
-        function handleJSONPicker(event) {
-             const file = event.target.files[0];
-             if (!file) return;
-
-             const reader = new FileReader();
-             reader.onload = (e) => {
-                 try {
-                     const data = JSON.parse(e.target.result);
-                     if (data.flashcards && Array.isArray(data.flashcards)) {
-                         flashCards = data.flashcards.sort(() => 0.5 - Math.random()); // Shuffle
-                         currentCardIndex = 0;
-                         correctAnswers = 0;
-                         appState = AppState.FLASHCARDS;
-                         render();
-                     } else {
-                         throw new Error("Invalid JSON format.");
-                     }
-                 } catch (error) {
-                     setState(AppState.ERROR, `JSONファイルの解析に失敗しました。ファイルが破損しているか、フォーマットが正しくない可能性があります。`);
-                 }
-             };
-             reader.readAsText(file);
+        
+        async function handleJsonFileSelect(event) {
+            const file = event.target.files[0];
+            if (file && file.type === "application/json") {
+                try {
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    if (data.flashcards && Array.isArray(data.flashcards)) {
+                        flashCards = data.flashcards.sort(() => 0.5 - Math.random());
+                        currentCardIndex = 0;
+                        correctAnswers = 0;
+                        isFlipped = false;
+                        setState(AppState.FLASHCARDS);
+                    } else { throw new Error("JSONのフォーマットが正しくありません。"); }
+                } catch (err) {
+                     setState(AppState.ERROR, `JSONの読み込みに失敗しました: ${err.message}`);
+                }
+            } else {
+                showToast("JSONファイルを選択してください。", "error");
+            }
         }
 
         async function generateFlashcards() {
             if (!loadedPDFText) {
-                setState(AppState.ERROR, "PDFが読み込まれていません。先に『PDFを読み込み』を実行してください。");
-                return;
-            }
-            if (openRouterApiKey === "YOUR_OPENROUTER_API_KEY_HERE" || !openRouterApiKey) {
-                setState(AppState.ERROR, "OpenRouter APIキーが設定されていません。コード内の `openRouterApiKey` を実際のキーに置き換えてください。");
+                setState(AppState.ERROR, "PDFが読み込まれていません。");
                 return;
             }
 
             isGenerating = true;
-            render(); // Re-render to show loading state
+            render();
+            showToast("AIがカードを生成中です...", "info", 20000);
 
             try {
-                const apiUrl = "https://openrouter.ai/api/v1/chat/completions";
-                const systemPrompt = `あなたは、提供されたPDFドキュメントのテキストから、重要な概念、定義、事実のみを抽出して、教育的な日本語のフラッシュカードを作成する熟練した日本人の専門家です。先生の名前、日付、ページ番号、挨拶、自己紹介、または主題と無関係な個人的なメモなど、授業内容と直接関係のない情報はすべて無視してください。あなたの唯一の仕事は、提供されたテキストから厳選された${selectedCardCount}個のフラッシュカードをJSON配列として生成することです。JSONは '{"flashcards": [{"frontText": "...", "backText": "..."}, ...]}' の形式でなければなりません。各JSONオブジェクトは、質問用の'frontText'と答え用の'backText'を正確に含む必要があります。質問と答えは、授業の主題に厳密に基づいていなければなりません。他のテキストや説明は一切含めないでください。JSON配列は厳密に${selectedCardCount}個のアイテムを持つ必要があります。また、絶対に英語を使用しないでください。`;
-                const userQuery = `以下の授業テキストを分析し、授業の主要な概念に基づいた${selectedCardCount}個のフラッシュカード（質問と答え）を作成してください:\n\n${loadedPDFText}`;
-                
-                const payload = {
-                    model: "openai/gpt-oss-20b:free",
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: userQuery }
-                    ],
-                    response_format: { type: "json_object" }
-                };
-
-                const response = await fetch(apiUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${openRouterApiKey}`,
-                        "HTTP-Referer": siteUrl,
-                        "X-Title": siteName,
-                    },
-                    body: JSON.stringify(payload)
+                // Netlify上のプロキシ関数にリクエストを送信
+                const response = await fetch('/.netlify/functions/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pdfText: loadedPDFText,
+                        cardCount: selectedCardCount
+                    })
                 });
-                
+
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.error ? errorData.error.message : `HTTP error! status: ${response.status}`);
+                    throw new Error(errorData.error || `サーバーエラーが発生しました (ステータス: ${response.status})`);
                 }
 
                 const data = await response.json();
-                const content = JSON.parse(data.choices[0].message.content);
 
-                if (content.flashcards && Array.isArray(content.flashcards)) {
-                    flashCards = content.flashcards.sort(() => 0.5 - Math.random()); // Shuffle
+                if (data.flashcards && Array.isArray(data.flashcards)) {
+                    flashCards = data.flashcards.sort(() => 0.5 - Math.random());
                     currentCardIndex = 0;
                     correctAnswers = 0;
-                    appState = AppState.FLASHCARDS;
+                    isFlipped = false;
+                    setState(AppState.FLASHCARDS);
+                    showToast("カードの生成が完了しました！", "success");
                 } else {
-                     throw new Error("AIの応答が期待されたJSONフォーマットではありません。");
+                    throw new Error("AIから予期しない形式のデータが返されました。");
                 }
 
             } catch (error) {
-                 setState(AppState.ERROR, `フラッシュカードの生成に失敗しました: ${error.message}`);
+                setState(AppState.ERROR, `生成に失敗しました: ${error.message}`);
             } finally {
                 isGenerating = false;
                 render();
             }
         }
         
-        function downloadFile(filename, content, mimeType) {
-            const element = document.createElement('a');
-            element.setAttribute('href', `data:${mimeType};charset=utf-8,` + encodeURIComponent(content));
-            element.setAttribute('download', filename);
-            element.style.display = 'none';
-            document.body.appendChild(element);
-            element.click();
-            document.body.removeChild(element);
+        // ... (handleCardFlip, handleAnswer, restartQuiz, backToHome, exportAsJSON, exportForWordHolic, render, attachEventListenersなどの関数は変更ありません)
+        function handleCardFlip() {
+            const cardInner = document.querySelector('.card-inner');
+            if (cardInner) {
+                isFlipped = !isFlipped;
+                cardInner.style.transform = isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)';
+            }
         }
-
-        function exportFlashcardsAsJSON() {
+        function handleAnswer(isCorrect) {
+            if (isCorrect) { correctAnswers++; }
+            if (currentCardIndex < flashCards.length - 1) {
+                currentCardIndex++;
+                isFlipped = false;
+                render();
+            } else { setState(AppState.FINISHED); }
+        }
+        function restartQuiz() {
+            flashCards = flashCards.sort(() => 0.5 - Math.random());
+            currentCardIndex = 0;
+            correctAnswers = 0;
+            isFlipped = false;
+            setState(AppState.FLASHCARDS);
+        }
+        function backToHome() {
+            loadedPDFText = '';
+            isPDFLoaded = false;
+            flashCards = [];
+            currentCardIndex = 0;
+            correctAnswers = 0;
+            isFlipped = false;
+            setState(AppState.INITIAL);
+        }
+        function exportAsJSON() {
             const exportData = { flashcards: flashCards };
             const jsonString = JSON.stringify(exportData, null, 2);
-            downloadFile('flashcards.json', jsonString, 'application/json');
-        }
-
-        function exportToWordHolicCSV() {
-            const header = "FrontText,BackText,Comment,FrontTextLanguage,BackTextLanguage\n";
-            const csvRows = flashCards.map(card => {
-                const front = `"${card.frontText.replace(/"/g, '""')}"`;
-                const back = `"${card.backText.replace(/"/g, '""')}"`;
-                return `${front},${back},,ja-JP,ja-JP`;
-            }).join("\n");
-            
-            // Add BOM for Excel compatibility with UTF-8
-            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-            const csvString = header + csvRows;
-            const blob = new Blob([bom, csvString], { type: 'text/csv;charset=utf-8;' });
-            
-            const link = document.createElement("a");
+            const blob = new Blob([jsonString], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", "wordholic_cards.csv");
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'flashcards.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
-
-        function setState(newState, errorMessage = '') {
-            appState = newState;
-            if(appState === AppState.ERROR) {
-                window.lastErrorMessage = errorMessage;
+        function exportForWordHolic() {
+            const header = "FrontText,BackText,Comment,FrontTextLanguage,BackTextLanguage\n";
+            const csvRows = flashCards.map(card => `"${card.frontText.replace(/"/g, '""')}",\"${card.backText.replace(/"/g, '""')}",,ja-JP,ja-JP`).join("\n");
+            const csvString = header + csvRows;
+            const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'wordholic_cards.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        function render() {
+            const app = document.getElementById('app');
+            app.innerHTML = '';
+            
+            switch (appState) {
+                case AppState.INITIAL:
+                    app.innerHTML = `
+                        <div class="container initial-container">
+                             <div class="title-cluster"><span class="title-icon">✨</span><h1>FlashMaker</h1></div>
+                             <p class="subtitle">PDFからAIが自動で暗記カードを作成します。</p>
+                             <div class="main-card">
+                                 <label class="custom-file-upload ${isPDFLoaded ? 'loaded' : ''}">
+                                     <input type="file" id="pdf-upload" accept=".pdf"/>
+                                     <span class="icon">📄</span> ${isPDFLoaded ? 'PDF読み込み完了！' : 'PDFを読み込み'}
+                                 </label>
+                                 <div class="control-group">
+                                     <div class="control-icon">🔢</div>
+                                     <div class="control-text">
+                                         <div class="control-label">カード枚数</div>
+                                         <div class="control-value">${selectedCardCount}枚作成する</div>
+                                     </div>
+                                     <div class="menu-container">
+                                         <button id="count-menu-btn" class="menu-button">変更</button>
+                                         <div id="count-menu" class="menu-dropdown">
+                                             <a href="#" data-count="10">10枚</a><a href="#" data-count="20">20枚</a>
+                                             <a href="#" data-count="30">30枚</a><a href="#" data-count="40">40枚</a>
+                                         </div>
+                                     </div>
+                                 </div>
+                                 <button id="generate-btn" class="generate-button" ${!isPDFLoaded || isGenerating ? 'disabled' : ''}>
+                                     ${isGenerating ? '<div class="loader"></div> 作成中...' : '暗記カードを作成'}
+                                 </button>
+                             </div>
+                             <label class="secondary-upload">
+                                <input type="file" id="json-upload" accept=".json"/>
+                                <span class="icon">📥</span> カードデータを読み込む
+                             </label>
+                        </div>`;
+                    break;
+                case AppState.FLASHCARDS:
+                    const c = flashCards[currentCardIndex];
+                    app.innerHTML = `
+                        <div class="container flashcard-container">
+                            <p class="progress-text">第${currentCardIndex + 1}問 / ${flashCards.length}問</p>
+                            <div class="card-scene">
+                                <div class="card-inner">
+                                    <div class="card-face card-front">${c.frontText}</div>
+                                    <div class="card-face card-back">${c.backText}</div>
+                                </div>
+                            </div>
+                            <div class="answer-buttons">
+                                <button id="incorrect-btn" class="answer-btn incorrect">不正解</button>
+                                <button id="correct-btn" class="answer-btn correct">正解</button>
+                            </div>
+                        </div>`;
+                    break;
+                case AppState.FINISHED:
+                    const correctP = flashCards.length > 0 ? (correctAnswers / flashCards.length) * 100 : 0;
+                    const incorrectC = flashCards.length - correctAnswers;
+                    const incorrectP = flashCards.length > 0 ? (incorrectC / flashCards.length) * 100 : 0;
+                    app.innerHTML = `
+                        <div class="container finished-container">
+                            <div class="main-card result-card">
+                                <h2>結果</h2><p class="result-subtitle">今回の成績です</p>
+                                <div class="result-circles">
+                                    <div class="result-circle">
+                                        <svg viewBox="0 0 36 36"><path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" /><path class="circle correct" stroke-dasharray="${correctP}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" /></svg>
+                                        <div class="result-count">${correctAnswers}</div><div class="result-label">正解</div>
+                                    </div>
+                                    <div class="result-circle">
+                                        <svg viewBox="0 0 36 36"><path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" /><path class="circle incorrect" stroke-dasharray="${incorrectP}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" /></svg>
+                                        <div class="result-count">${incorrectC}</div><div class="result-label">不正解</div>
+                                    </div>
+                                </div>
+                                <div class="result-actions">
+                                    <button id="restart-btn" class="result-btn">もう一度挑戦</button>
+                                    <button id="home-btn" class="result-btn">タイトルに戻る</button>
+                                </div>
+                                <div class="export-actions">
+                                    <button id="export-json-btn">JSONで共有</button>
+                                    <button id="export-wordholic-btn">WordHolic形式で共有</button>
+                                </div>
+                            </div>
+                        </div>`;
+                    break;
+                case AppState.ERROR:
+                    app.innerHTML = `
+                         <div class="container error-container">
+                             <div class="main-card">
+                                 <div class="error-icon">⚠️</div><h2>エラーが発生しました</h2>
+                                 <p class="error-message">${errorMessage}</p>
+                                 <button id="home-btn" class="result-btn">最初に戻る</button>
+                             </div>
+                         </div>`;
+                    break;
             }
-            render();
+            attachEventListeners();
         }
-        
-        function resetApp() {
-            flashCards = [];
-            correctAnswers = 0;
-            loadedPDFText = '';
-            isGenerating = false;
-            currentCardIndex = 0;
-            appState = AppState.INITIAL;
-            render();
+        function attachEventListeners() {
+            if (appState === AppState.INITIAL) {
+                document.getElementById('pdf-upload')?.addEventListener('change', handleFileSelect);
+                document.getElementById('json-upload')?.addEventListener('change', handleJsonFileSelect);
+                document.getElementById('generate-btn')?.addEventListener('click', generateFlashcards);
+                const menuBtn = document.getElementById('count-menu-btn');
+                const menu = document.getElementById('count-menu');
+                menuBtn?.addEventListener('click', () => menu.classList.toggle('show'));
+                document.querySelectorAll('#count-menu a').forEach(item => {
+                    item.addEventListener('click', e => {
+                        e.preventDefault();
+                        selectedCardCount = parseInt(e.target.dataset.count, 10);
+                        menu.classList.remove('show');
+                        render();
+                    });
+                });
+                window.addEventListener('click', (e) => {
+                    if (menu && menuBtn && !menuBtn.contains(e.target) && !menu.contains(e.target)) {
+                        menu.classList.remove('show');
+                    }
+                });
+            } else if (appState === AppState.FLASHCARDS) {
+                document.querySelector('.card-scene')?.addEventListener('click', handleCardFlip);
+                document.getElementById('correct-btn')?.addEventListener('click', () => handleAnswer(true));
+                document.getElementById('incorrect-btn')?.addEventListener('click', () => handleAnswer(false));
+            } else if (appState === AppState.FINISHED) {
+                document.getElementById('restart-btn')?.addEventListener('click', restartQuiz);
+                document.getElementById('home-btn')?.addEventListener('click', backToHome);
+                document.getElementById('export-json-btn')?.addEventListener('click', exportAsJSON);
+                document.getElementById('export-wordholic-btn')?.addEventListener('click', exportForWordHolic);
+            } else if (appState === AppState.ERROR) {
+                document.getElementById('home-btn')?.addEventListener('click', backToHome);
+            }
         }
+        document.addEventListener('DOMContentLoaded', render);
 
-        function restartQuiz() {
-            flashCards = flashCards.sort(() => 0.5 - Math.random()); // Re-shuffle
-            correctAnswers = 0;
-            currentCardIndex = 0;
-            appState = AppState.FLASHCARDS;
-            render();
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            let bgColor = 'bg-blue-500';
-            if (type === 'success') bgColor = 'bg-green-500';
-            if (type === 'error') bgColor = 'bg-red-500';
-            
-            toast.className = `fixed top-5 right-5 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg transform translate-x-full animate-slide-in`;
-            toast.textContent = message;
-            
-            document.body.appendChild(toast);
-            
-            // CSS for animation
-            const style = document.createElement('style');
-            style.innerHTML = `
-                @keyframes slide-in {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
-                .animate-slide-in {
-                    animation: slide-in 0.5s forwards ease-out;
-                }
-            `;
-            document.head.appendChild(style);
-
-            setTimeout(() => {
-                toast.style.transition = 'opacity 0.5s';
-                toast.style.opacity = '0';
-                setTimeout(() => {
-                    toast.remove();
-                    style.remove();
-                }, 500);
-            }, 3000);
-        }
-
-        // --- INITIALIZATION ---
-        render(); // Initial render of the app
     </script>
 </body>
 </html>
-
